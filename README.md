@@ -36,7 +36,7 @@ I highly recommend getting Hetzner VPS to run this. <a href="https://hetzner.clo
 </p>
 
 <p align="center">
-  <a href="https://ghray.com/Autensa_v2.mp4"><strong>▶️ Watch the Autensa v2 Demo</strong></a>
+  <a href="https://ghray.com/Autensa_v2.mp4"><strong>▶️ Watch the Autensa v2 Introduction</strong></a>
 </p>
 
 ---
