@@ -1597,10 +1597,10 @@ const migrations: Migration[] = [
     }
   },
   {
-    id: '029',
+    id: '032',
     name: 'add_pr_review_autofix',
     up: (db) => {
-      console.log('[Migration 029] Adding PR review auto-fix columns...');
+      console.log('[Migration 032] Adding PR review auto-fix columns...');
 
       // Add review_fix_count and review_fix_max to tasks
       const tasksInfo = db.prepare("PRAGMA table_info(tasks)").all() as { name: string }[];
@@ -1623,7 +1623,7 @@ const migrations: Migration[] = [
       // of values not in CHECK when using ALTER TABLE ADD COLUMN. The schema.ts
       // handles it for fresh databases. We'll just ensure the columns exist.
 
-      console.log('[Migration 029] PR review auto-fix columns added');
+      console.log('[Migration 032] PR review auto-fix columns added');
     }
   }
 ];
