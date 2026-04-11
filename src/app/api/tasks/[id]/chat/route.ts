@@ -2,12 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createNote, getTaskNotes, getActiveSessionForTask, markNotesDelivered } from '@/lib/task-notes';
 import { getOpenClawClient } from '@/lib/openclaw/client';
 import { getMissionControlUrl } from '@/lib/config';
-import { expectReply } from '@/lib/chat-listener';
+import { attachChatListener, expectReply } from '@/lib/chat-listener';
 import { queryOne } from '@/lib/db';
 import { broadcast } from '@/lib/events';
 import type { Task } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
+
+// Ensure reply listener is attached even when the task chat UI is used without
+// an SSE subscriber. TaskChatTab polls /api/tasks/:id/chat directly and may
+// never open /api/events/stream, so relying on the SSE route to attach the
+// listener causes agent replies to be missed.
+attachChatListener();
 
 interface RouteParams {
   params: Promise<{ id: string }>;
