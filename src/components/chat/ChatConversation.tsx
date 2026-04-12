@@ -44,10 +44,10 @@ export function ChatConversation({ taskId, onMarkRead }: ChatConversationProps) 
   const waiting = useMemo(() => {
     if (notes.length === 0) return false;
     const last = notes[notes.length - 1];
-    if (last.role === 'assistant') return false;
     if (last.role !== 'user') return false;
+    if (last.status === 'pending') return true;
     const age = Date.now() - new Date(last.created_at).getTime();
-    return age < 300000;
+    return age < 15000;
   }, [notes]);
 
   useEffect(() => {

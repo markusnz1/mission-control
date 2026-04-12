@@ -39,15 +39,20 @@ export function TaskChatTab({ taskId }: TaskChatTabProps) {
     fetch(`/api/tasks/${taskId}/read`, { method: 'POST' }).catch(() => {});
   }, [taskId]);
 
-  // Derive "waiting" from data: last message is from user, delivered, and less than 5 min old
+  // Derive "waiting" conservatively.
+  // Old behavior used a 5-minute window for any last user message, which caused
+  // stale "waiting" bubbles even after the task was effectively done or no reply
+  // was realistically coming. Show waiting only while a user message is still
+  // pending delivery, or for a short period right after a delivered user message.
   const waiting = useMemo(() => {
     if (notes.length === 0) return false;
     const last = notes[notes.length - 1];
-    if (last.role === 'assistant') return false;
     if (last.role !== 'user') return false;
-    // Check if the message is recent (< 5 minutes)
+
+    if (last.status === 'pending') return true;
+
     const age = Date.now() - new Date(last.created_at).getTime();
-    return age < 300000;
+    return age < 15000;
   }, [notes]);
 
   // Auto-scroll on new notes or waiting state change
