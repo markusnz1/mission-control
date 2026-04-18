@@ -111,8 +111,8 @@ export async function POST(request: NextRequest) {
       idempotencyKey: `agent-generate-${Date.now()}`,
     });
 
-    for (let attempt = 0; attempt < 10; attempt += 1) {
-      await sleep(1000);
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      await sleep(2000);
       const result = await client.call<{
         messages: Array<{ role: string; content: Array<{ type: string; text?: string }> }>;
       }>('chat.history', { sessionKey, limit: 50 });
