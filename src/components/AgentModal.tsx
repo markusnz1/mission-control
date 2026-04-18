@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Save, Trash2 } from 'lucide-react';
+import { X, Save, Trash2, Sparkles, Loader2 } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
+import { useToast } from '@/components/Toast';
 import type { Agent, AgentStatus } from '@/lib/types';
 
 interface AgentModalProps {
@@ -15,9 +16,11 @@ interface AgentModalProps {
 const EMOJI_OPTIONS = ['🤖', '🦞', '💻', '🔍', '✍️', '🎨', '📊', '🧠', '⚡', '🚀', '🎯', '🔧'];
 
 export function AgentModal({ agent, onClose, workspaceId, onAgentCreated }: AgentModalProps) {
-  const { addAgent, updateAgent, agents } = useMissionControl();
+  const { addAgent, updateAgent } = useMissionControl();
+  const { addToast } = useToast();
   const [activeTab, setActiveTab] = useState<'info' | 'soul' | 'user' | 'agents'>('info');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [defaultModel, setDefaultModel] = useState<string>('');
   const [modelsLoading, setModelsLoading] = useState(true);
@@ -77,6 +80,63 @@ export function AgentModal({ agent, onClose, workspaceId, onAgentCreated }: Agen
     };
     loadModels();
   }, [agent]);
+
+  const handleGenerate = async () => {
+    const name = form.name.trim();
+    const description = form.description.trim();
+    const role = form.role.trim();
+
+    if (!name || !description) {
+      addToast({
+        type: 'warning',
+        title: 'Name and description required',
+        message: 'Add a name and short description before generating the agent profile.',
+      });
+      return;
+    }
+
+    setIsGenerating(true);
+
+    try {
+      const res = await fetch('/api/agents/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, description, role: role || undefined }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to generate agent profile');
+      }
+
+      setForm((prev) => ({
+        ...prev,
+        soul_md: data.soul_md || '',
+        user_md: data.user_md || '',
+        agents_md: data.agents_md || '',
+        avatar_emoji: data.avatar_emoji || prev.avatar_emoji,
+        model: data.model || prev.model,
+        role: data.role || prev.role,
+        session_key_prefix: data.session_key_prefix || prev.session_key_prefix,
+      }));
+
+      addToast({
+        type: 'success',
+        title: 'Agent profile generated',
+        message: 'The AI filled in the persona, user context, workspace guide, and defaults.',
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to generate agent profile';
+      addToast({
+        type: 'error',
+        title: 'Generation failed',
+        message,
+      });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -239,6 +299,28 @@ export function AgentModal({ agent, onClose, workspaceId, onAgentCreated }: Agen
                   placeholder="What does this agent do?"
                 />
               </div>
+
+              {!agent && (
+                <div className="rounded-lg border border-purple-500/30 bg-purple-500/10 p-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-purple-200">AI Generate</p>
+                      <p className="text-xs text-purple-200/80 mt-1">
+                        Use the default OpenClaw agent to draft this agent&apos;s persona, context files, and routing defaults.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleGenerate}
+                      disabled={isGenerating}
+                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-purple-500 px-4 py-2 text-sm font-medium text-white hover:bg-purple-400 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      {isGenerating ? 'Generating...' : 'AI Generate'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Status */}
               <div>
