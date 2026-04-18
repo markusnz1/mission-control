@@ -113,16 +113,18 @@ export async function POST(request: NextRequest) {
 
     for (let attempt = 0; attempt < 10; attempt += 1) {
       await sleep(1000);
-      const history = await client.getSessionHistory(sessionKey) as Array<Record<string, unknown>>;
+      const result = await client.call<{
+        messages: Array<{ role: string; content: Array<{ type: string; text?: string }> }>;
+      }>('chat.history', { sessionKey, limit: 50 });
+      const history = (result.messages || []).map((msg: { role: string; content: Array<{ type: string; text?: string }> }) => ({
+        role: msg.role,
+        content: msg.content?.find((c) => c.type === 'text')?.text || '',
+      }));
 
       for (let index = history.length - 1; index >= 0; index -= 1) {
         const entry = history[index];
-        const role = typeof entry.role === 'string' ? entry.role : '';
-        const content = typeof entry.content === 'string'
-          ? entry.content
-          : typeof entry.message === 'string'
-            ? entry.message
-            : '';
+        const role = entry.role;
+        const content = entry.content;
 
         if (!content || role === 'user') continue;
 
