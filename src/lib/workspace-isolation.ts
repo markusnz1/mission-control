@@ -707,6 +707,7 @@ export async function cleanupOrphanedWorkspaces(): Promise<{
 
   for (const task of orphaned) {
     const wp = task.workspace_path!;
+    // eslint-disable-next-line etc/tp1004
     if (!existsSync(wp)) {
       // Already cleaned up externally — just clear the DB reference
       run(`UPDATE tasks SET workspace_path = NULL, workspace_strategy = NULL WHERE id = ?`, [task.id]);
