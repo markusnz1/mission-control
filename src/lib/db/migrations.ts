@@ -1595,6 +1595,20 @@ const migrations: Migration[] = [
 
       console.log('[Migration 028] product_skills and skill_reports tables created');
     }
+  },
+  {
+    id: '029',
+    name: 'add_task_activities_is_system',
+    up: (db) => {
+      console.log('[Migration 029] Adding is_system column to task_activities...');
+      const cols = db.prepare('PRAGMA table_info(task_activities)').all() as { name: string }[];
+      if (!cols.some(c => c.name === 'is_system')) {
+        db.exec(`ALTER TABLE task_activities ADD COLUMN is_system INTEGER DEFAULT 0`);
+        console.log('[Migration 029] is_system column added to task_activities');
+      } else {
+        console.log('[Migration 029] is_system column already exists — skipping');
+      }
+    }
   }
 ];
 

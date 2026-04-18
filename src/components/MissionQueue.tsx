@@ -9,6 +9,8 @@ import { useUnreadCounts } from '@/hooks/useUnreadCounts';
 import type { Task, TaskStatus } from '@/lib/types';
 import { TaskModal } from './TaskModal';
 import { formatDistanceToNow } from 'date-fns';
+import { HealthAlertBanner } from './HealthAlertBanner';
+import { requestNotificationPermission } from '@/lib/notifications';
 
 interface MissionQueueProps {
   workspaceId?: string;
@@ -53,6 +55,11 @@ export function MissionQueue({ workspaceId, mobileMode = false, isPortrait = tru
   const [pendingMove, setPendingMove] = useState<{ task: Task; targetStatus: TaskStatus } | null>(null);
 
   const getTasksByStatus = (status: TaskStatus) => tasks.filter((task) => task.status === status);
+
+  // Request browser notification permission on mount
+  useEffect(() => {
+    requestNotificationPermission();
+  }, []);
 
   // Active pipeline states where manual moves are dangerous
   const ACTIVE_PIPELINE_STATES: TaskStatus[] = ['assigned', 'in_progress', 'convoy_active', 'testing', 'review', 'verification'];
@@ -174,6 +181,8 @@ export function MissionQueue({ workspaceId, mobileMode = false, isPortrait = tru
           New Task
         </button>
       </div>
+
+      <HealthAlertBanner onViewTask={(task) => setEditingTask(task)} />
 
       {!mobileMode ? (
         <div className="mission-queue-scroll-x flex-1 flex gap-3 p-3 overflow-x-auto">

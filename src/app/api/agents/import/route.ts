@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { queryOne, queryAll, run, transaction } from '@/lib/db';
+import { buildAgentsMd, buildSoulMd, buildUserMd, ensureGatewayAgentMetadata } from '@/lib/gateway-agent-metadata';
 import type { Agent } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -64,36 +65,28 @@ export async function POST(request: NextRequest) {
         const id = uuidv4();
         const workspaceId = agentReq.workspace_id || 'default';
 
-        // Generate default identity files referencing the gateway agent.
-        // The gateway does not expose SOUL.md/USER.md/AGENTS.md via its API,
-        // so we populate sensible defaults that prompt the user to paste their
-        // existing content from the OpenClaw workspace.
-        const soulMd = [
-          `# ${agentReq.name}`,
-          '',
-          `Imported from OpenClaw Gateway (agent: ${agentReq.gateway_agent_id}).`,
-          '',
-          'Configure this agent\'s personality, values, and communication style here.',
-          'If this agent has a SOUL.md in your OpenClaw workspace, paste its contents here.',
-        ].join('\n');
+        const baseAgent: Agent = {
+          id,
+          name: agentReq.name,
+          role: 'Imported Agent',
+          description: `Imported from OpenClaw Gateway (${agentReq.gateway_agent_id})`,
+          avatar_emoji: '🔗',
+          status: 'standby',
+          is_master: false,
+          workspace_id: workspaceId,
+          soul_md: undefined,
+          user_md: undefined,
+          agents_md: undefined,
+          model: agentReq.model || undefined,
+          source: 'gateway',
+          gateway_agent_id: agentReq.gateway_agent_id,
+          created_at: now,
+          updated_at: now,
+        };
 
-        const userMd = [
-          '# User Context',
-          '',
-          `Imported from OpenClaw Gateway (agent: ${agentReq.gateway_agent_id}).`,
-          '',
-          'Add context about the human this agent works with.',
-          'If this agent has a USER.md in your OpenClaw workspace, paste its contents here.',
-        ].join('\n');
-
-        const agentsMd = [
-          '# Team Roster',
-          '',
-          `Imported from OpenClaw Gateway (agent: ${agentReq.gateway_agent_id}).`,
-          '',
-          'Describe the other agents this agent collaborates with.',
-          'If this agent has an AGENTS.md in your OpenClaw workspace, paste its contents here.',
-        ].join('\n');
+        const soulMd = buildSoulMd(baseAgent);
+        const userMd = buildUserMd(baseAgent);
+        const agentsMd = buildAgentsMd(baseAgent);
 
         run(
           `INSERT INTO agents (id, name, role, description, avatar_emoji, is_master, workspace_id, soul_md, user_md, agents_md, model, source, gateway_agent_id, created_at, updated_at)
@@ -126,6 +119,7 @@ export async function POST(request: NextRequest) {
 
         const agent = queryOne<Agent>('SELECT * FROM agents WHERE id = ?', [id]);
         if (agent) {
+          ensureGatewayAgentMetadata(agent);
           results.imported.push(agent);
         }
       }

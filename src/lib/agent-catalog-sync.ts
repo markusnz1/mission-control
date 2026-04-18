@@ -18,7 +18,7 @@ function normaliseModel(
   return model.primary ?? null;
 }
 
-const SYNC_INTERVAL_MS = Number(process.env.AGENT_CATALOG_SYNC_INTERVAL_MS || 60_000);
+const SYNC_INTERVAL_MS = Number(process.env.AGENT_CATALOG_SYNC_INTERVAL_MS || 900_000);
 let lastSyncAt = 0;
 let syncing: Promise<number> | null = null;
 

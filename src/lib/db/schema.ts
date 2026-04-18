@@ -243,6 +243,7 @@ CREATE TABLE IF NOT EXISTS task_activities (
   activity_type TEXT NOT NULL,
   message TEXT NOT NULL,
   metadata TEXT,
+  is_system INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now'))
 );
 

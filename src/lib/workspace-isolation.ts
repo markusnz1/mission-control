@@ -686,3 +686,71 @@ export async function triggerWorkspaceMerge(taskId: string): Promise<MergeResult
     }
   }
 }
+
+export async function cleanupOrphanedWorkspaces(): Promise<{
+  cleaned: string[];
+  failed: string[];
+}> {
+  const cleaned: string[] = [];
+  const failed: string[] = [];
+
+  // Find workspaces belonging to completed tasks older than 7 days
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const orphaned = queryAll<Task>(
+    `SELECT * FROM tasks
+     WHERE workspace_path IS NOT NULL
+       AND workspace_strategy = 'worktree'
+       AND status IN ('done', 'merged', 'closed')
+       AND updated_at < ?`,
+    [sevenDaysAgo]
+  );
+
+  for (const task of orphaned) {
+    const wp = task.workspace_path!;
+    if (!existsSync(wp)) {
+      // Already cleaned up externally — just clear the DB reference
+      run(`UPDATE tasks SET workspace_path = NULL, workspace_strategy = NULL WHERE id = ?`, [task.id]);
+      cleaned.push(wp);
+      continue;
+    }
+
+    try {
+      // Read branch name from metadata
+      const metadataPath = path.join(wp, '.mc-workspace.json');
+      let branchName: string | null = null;
+      if (existsSync(metadataPath)) {
+        try {
+          const meta = JSON.parse(readFileSync(metadataPath, 'utf-8'));
+          branchName = meta.branch || null;
+        } catch { /* ignore */ }
+      }
+
+      // Remove the git worktree (force remove local changes)
+      try {
+        execSync(`git worktree remove "${wp}" --force`, { stdio: 'ignore' });
+      } catch {
+        // Worktree may already be clean or not a worktree — try removing directory directly
+        try {
+          execSync(`rm -rf "${wp}"`, { stdio: 'ignore' });
+        } catch { /* ignore */ }
+      }
+
+      // Remove the branch if we found its name
+      if (branchName) {
+        try {
+          execSync(`git branch -D "${branchName}" 2>/dev/null || true`, { stdio: 'ignore' });
+        } catch { /* ignore */ }
+      }
+
+      // Clear DB references
+      run(`UPDATE tasks SET workspace_path = NULL, workspace_strategy = NULL WHERE id = ?`, [task.id]);
+      console.log(`[Workspace] Cleaned orphaned workspace: ${wp} (task: ${task.title})`);
+      cleaned.push(wp);
+    } catch (err) {
+      console.error(`[Workspace] Failed to clean workspace ${wp}:`, err);
+      failed.push(wp);
+    }
+  }
+
+  return { cleaned, failed };
+}

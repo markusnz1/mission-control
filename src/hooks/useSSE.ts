@@ -23,6 +23,9 @@ export function useSSE() {
     setIsOnline,
     selectedTask,
     setSelectedTask,
+    setAgentHealth,
+    addHealthAlert,
+    removeHealthAlert,
   } = useMissionControl();
 
   // Update ref when selectedTask changes (outside the SSE effect)
@@ -120,9 +123,28 @@ export function useSSE() {
               // Convoy events trigger task re-fetch via task_updated events
               break;
 
-            case 'agent_health_changed':
+            case 'agent_health_changed': {
               debug.sse('Agent health changed', sseEvent.payload);
+              const health = sseEvent.payload as { agent_id: string; health_state: string; task_id?: string; consecutive_stall_checks?: number };
+              setAgentHealth(health.agent_id, health as any);
+              // Generate alert for stuck/zombie states
+              if ((health.health_state === 'stuck' || health.health_state === 'zombie') && health.task_id) {
+                removeHealthAlert(health.agent_id);
+                addHealthAlert({
+                  agentId: health.agent_id,
+                  agentName: '',
+                  agentEmoji: '🔴',
+                  taskId: health.task_id,
+                  taskTitle: '',
+                  healthState: health.health_state as 'stuck' | 'zombie',
+                  duration: 'just now',
+                  recoveryAttempts: health.consecutive_stall_checks || 0,
+                  sessionAlive: health.health_state !== 'zombie',
+                  hasArtifacts: false,
+                });
+              }
               break;
+            }
 
             case 'checkpoint_saved':
               debug.sse('Checkpoint saved', sseEvent.payload);

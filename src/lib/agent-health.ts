@@ -124,8 +124,8 @@ export async function runHealthCheckCycle(): Promise<AgentHealth[]> {
     // Log warnings for degraded states
     if (activeTask && (healthState === 'stalled' || healthState === 'stuck' || healthState === 'zombie')) {
       run(
-        `INSERT INTO task_activities (id, task_id, agent_id, activity_type, message, created_at)
-         VALUES (?, ?, ?, 'status_changed', ?, ?)`,
+        `INSERT INTO task_activities (id, task_id, agent_id, activity_type, message, is_system, created_at)
+         VALUES (?, ?, ?, 'status_changed', ?, 1, ?)`,
         [uuidv4(), activeTask.id, agentId, `Agent health: ${healthState}`, now]
       );
     }
@@ -172,8 +172,8 @@ export async function runHealthCheckCycle(): Promise<AgentHealth[]> {
       if (res.ok) {
         console.log(`[Health] Auto-dispatched orphaned task "${task.title}"`);
         run(
-          `INSERT INTO task_activities (id, task_id, agent_id, activity_type, message, created_at)
-           VALUES (?, ?, ?, 'status_changed', 'Auto-dispatched by health sweeper (was stuck in assigned)', ?)`,
+          `INSERT INTO task_activities (id, task_id, agent_id, activity_type, message, is_system, created_at)
+           VALUES (?, ?, ?, 'status_changed', 'Auto-dispatched by health sweeper (was stuck in assigned)', 1, ?)`,
           [uuidv4(), task.id, task.assigned_agent_id, now]
         );
       } else {
@@ -268,8 +268,8 @@ export async function nudgeAgent(agentId: string): Promise<{ success: boolean; e
 
     // Log nudge
     run(
-      `INSERT INTO task_activities (id, task_id, agent_id, activity_type, message, created_at)
-       VALUES (?, ?, ?, 'status_changed', 'Agent nudged — re-dispatching with checkpoint context', ?)`,
+      `INSERT INTO task_activities (id, task_id, agent_id, activity_type, message, is_system, created_at)
+       VALUES (?, ?, ?, 'status_changed', 'Agent nudged — re-dispatching with checkpoint context', 1, ?)`,
       [uuidv4(), activeTask.id, agentId, now]
     );
 

@@ -12,6 +12,7 @@ import { buildCheckpointContext } from '@/lib/checkpoint';
 import { formatMailForDispatch } from '@/lib/mailbox';
 import { getPendingNotesForDispatch } from '@/lib/task-notes';
 import { createTaskWorkspace, determineIsolationStrategy } from '@/lib/workspace-isolation';
+import { ensureGatewayAgentMetadata } from '@/lib/gateway-agent-metadata';
 import type { Task, Agent, Product, OpenClawSession, WorkflowStage, TaskImage } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -179,6 +180,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           console.warn(`[Dispatch] ${costCapWarning} for product ${product.name}`);
         }
       }
+    }
+
+    let gatewayMetadataInfo: ReturnType<typeof ensureGatewayAgentMetadata> | null = null;
+    if (agent.source === 'gateway' || agent.gateway_agent_id) {
+      gatewayMetadataInfo = ensureGatewayAgentMetadata(agent);
     }
 
     // Build task message for agent
@@ -439,10 +445,18 @@ If you need help or clarification, ask the orchestrator.`;
       // Format: {prefix}{openclaw_session_id} where prefix defaults to 'agent:main:'
       const prefix = agent.session_key_prefix || 'agent:main:';
       const sessionKey = `${prefix}${session.openclaw_session_id}`;
+      const spawnConfig = gatewayMetadataInfo
+        ? {
+            SPEC_FILE: gatewayMetadataInfo.soulPath,
+            USER_FILE: gatewayMetadataInfo.userPath,
+            AGENTS_FILE: gatewayMetadataInfo.agentsPath,
+          }
+        : undefined;
       await client.call('chat.send', {
         sessionKey,
         message: finalMessage,
-        idempotencyKey: `dispatch-${task.id}-${Date.now()}`
+        idempotencyKey: `dispatch-${task.id}-${Date.now()}`,
+        ...(spawnConfig ? { spawnConfig } : {}),
       });
 
       // Only move to in_progress for builder dispatch (task is in 'assigned' status)

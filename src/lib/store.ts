@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import { debug } from './debug';
-import type { Agent, Task, Conversation, Message, Event, TaskStatus, OpenClawSession } from './types';
+import type { Agent, Task, Conversation, Message, Event, TaskStatus, OpenClawSession, AgentHealth, HealthAlert } from './types';
 
 const ACTIVE_TASK_STATUSES = new Set<TaskStatus>(['assigned', 'in_progress', 'convoy_active', 'testing', 'verification']);
 
@@ -57,6 +57,10 @@ interface MissionControlState {
   setIsLoading: (loading: boolean) => void;
   setSelectedBusiness: (business: string) => void;
 
+  // Health state
+  agentHealthMap: Record<string, AgentHealth>;
+  healthAlerts: HealthAlert[];
+
   // Task mutations
   updateTaskStatus: (taskId: string, status: TaskStatus) => void;
   updateTask: (task: Task) => void;
@@ -71,6 +75,12 @@ interface MissionControlState {
   setAgentOpenClawSession: (agentId: string, session: OpenClawSession | null) => void;
   setOpenclawMessages: (messages: Message[]) => void;
   addOpenclawMessage: (message: Message) => void;
+
+  // Health actions
+  setAgentHealth: (agentId: string, health: AgentHealth) => void;
+  setHealthAlerts: (alerts: HealthAlert[]) => void;
+  addHealthAlert: (alert: HealthAlert) => void;
+  removeHealthAlert: (agentId: string) => void;
 }
 
 export const useMissionControl = create<MissionControlState>((set) => ({
@@ -88,6 +98,10 @@ export const useMissionControl = create<MissionControlState>((set) => ({
   isOnline: false,
   isLoading: true,
   selectedBusiness: 'all',
+
+  // Health state
+  agentHealthMap: {},
+  healthAlerts: [],
 
   // Setters
   setAgents: (agents) =>
@@ -197,4 +211,20 @@ export const useMissionControl = create<MissionControlState>((set) => ({
   setOpenclawMessages: (messages) => set({ openclawMessages: messages }),
   addOpenclawMessage: (message) =>
     set((state) => ({ openclawMessages: [...state.openclawMessages, message] })),
+
+  // Health actions
+  setAgentHealth: (agentId, health) =>
+    set((state) => ({
+      agentHealthMap: { ...state.agentHealthMap, [agentId]: health },
+    })),
+  setHealthAlerts: (alerts) => set({ healthAlerts: alerts }),
+  addHealthAlert: (alert) =>
+    set((state) => {
+      const filtered = state.healthAlerts.filter(a => a.agentId !== alert.agentId);
+      return { healthAlerts: [...filtered, alert] };
+    }),
+  removeHealthAlert: (agentId) =>
+    set((state) => ({
+      healthAlerts: state.healthAlerts.filter(a => a.agentId !== agentId),
+    })),
 }));

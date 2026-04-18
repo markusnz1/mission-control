@@ -785,6 +785,19 @@ export interface AgentHealth {
   agent?: Agent;
 }
 
+export interface HealthAlert {
+  agentId: string;
+  agentName: string;
+  agentEmoji: string;
+  taskId: string;
+  taskTitle: string;
+  healthState: 'stuck' | 'zombie';
+  duration: string;
+  recoveryAttempts: number;
+  sessionAlive: boolean;
+  hasArtifacts: boolean;
+}
+
 export interface WorkCheckpoint {
   id: string;
   task_id: string;
