@@ -494,6 +494,10 @@ export class OpenClawClient extends EventEmitter {
     return [];
   }
 
+  async getAgentMetadata(agentId: string): Promise<unknown> {
+    return this.call('agents.getMetadata', { agent_id: agentId });
+  }
+
   // Node methods (device capabilities)
   async listNodes(): Promise<unknown[]> {
     return this.call<unknown[]>('node.list');

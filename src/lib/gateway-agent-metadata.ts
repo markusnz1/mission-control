@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { queryOne, run } from '@/lib/db';
+import { getOpenClawClient } from '@/lib/openclaw/client';
 import type { Agent } from '@/lib/types';
 
 export interface GatewayAgentWorkspaceInfo {
@@ -15,6 +16,25 @@ interface AgentWorkspaceRow {
   workspace_slug?: string;
 }
 
+interface GatewayAgentMetadataResult {
+  soul_md?: string;
+  user_md?: string;
+  agents_md?: string;
+  soulMd?: string;
+  userMd?: string;
+  agentsMd?: string;
+  SOUL_md?: string;
+  USER_md?: string;
+  AGENTS_md?: string;
+  files?: {
+    [key: string]: unknown;
+  };
+  metadata?: {
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
 function safeSegment(value: string | undefined, fallback: string): string {
   const cleaned = (value || fallback)
     .trim()
@@ -27,6 +47,65 @@ function safeSegment(value: string | undefined, fallback: string): string {
 function escapeMarkdown(value: string | undefined, fallback = 'Unknown'): string {
   const text = (value || fallback).trim() || fallback;
   return text.replace(/[<>]/g, '');
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string') {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function extractFileContent(container: unknown, ...keys: string[]): string | undefined {
+  if (!container || typeof container !== 'object') return undefined;
+  const record = container as Record<string, unknown>;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (value && typeof value === 'object') {
+      const nested = value as Record<string, unknown>;
+      const nestedContent = firstString(nested.content, nested.text, nested.value, nested.body);
+      if (nestedContent) {
+        return nestedContent;
+      }
+    }
+  }
+  return undefined;
+}
+
+export function normaliseGatewayMetadata(metadata: unknown): { soul_md?: string; user_md?: string; agents_md?: string } {
+  if (!metadata || typeof metadata !== 'object') {
+    return {};
+  }
+
+  const record = metadata as GatewayAgentMetadataResult;
+  const soul_md = firstString(
+    record.soul_md,
+    record.soulMd,
+    record.SOUL_md,
+    extractFileContent(record.files, 'SOUL.md', 'soul_md', 'soulMd'),
+    extractFileContent(record.metadata, 'SOUL.md', 'soul_md', 'soulMd')
+  );
+  const user_md = firstString(
+    record.user_md,
+    record.userMd,
+    record.USER_md,
+    extractFileContent(record.files, 'USER.md', 'user_md', 'userMd'),
+    extractFileContent(record.metadata, 'USER.md', 'user_md', 'userMd')
+  );
+  const agents_md = firstString(
+    record.agents_md,
+    record.agentsMd,
+    record.AGENTS_md,
+    extractFileContent(record.files, 'AGENTS.md', 'agents_md', 'agentsMd'),
+    extractFileContent(record.metadata, 'AGENTS.md', 'agents_md', 'agentsMd')
+  );
+
+  return { soul_md, user_md, agents_md };
 }
 
 export function getGatewayAgentWorkspaceInfo(agent: Agent): GatewayAgentWorkspaceInfo {
@@ -103,6 +182,20 @@ export function buildAgentsMd(agent: Agent, info?: GatewayAgentWorkspaceInfo): s
   ].join('\n');
 }
 
+export function writeGatewayAgentMetadata(
+  agent: Agent,
+  metadata?: { soul_md?: string; user_md?: string; agents_md?: string }
+): GatewayAgentWorkspaceInfo {
+  const info = getGatewayAgentWorkspaceInfo(agent);
+  fs.mkdirSync(info.root, { recursive: true });
+
+  fs.writeFileSync(info.soulPath, metadata?.soul_md ?? buildSoulMd(agent), 'utf8');
+  fs.writeFileSync(info.userPath, metadata?.user_md ?? buildUserMd(agent), 'utf8');
+  fs.writeFileSync(info.agentsPath, metadata?.agents_md ?? buildAgentsMd(agent, info), 'utf8');
+
+  return info;
+}
+
 export function ensureGatewayAgentMetadata(agent: Agent): GatewayAgentWorkspaceInfo {
   const info = getGatewayAgentWorkspaceInfo(agent);
   fs.mkdirSync(info.root, { recursive: true });
@@ -118,6 +211,38 @@ export function ensureGatewayAgentMetadata(agent: Agent): GatewayAgentWorkspaceI
   }
 
   return info;
+}
+
+export async function fetchGatewayMetadata(agent: Agent): Promise<{ soul_md?: string; user_md?: string; agents_md?: string }> {
+  if (!agent.gateway_agent_id) {
+    return {};
+  }
+
+  const client = getOpenClawClient();
+  if (!client.isConnected()) {
+    await client.connect();
+  }
+
+  const rawMetadata = await client.getAgentMetadata(agent.gateway_agent_id);
+  return normaliseGatewayMetadata(rawMetadata);
+}
+
+export async function syncGatewayMetadata(agent: Agent): Promise<{ soul_md?: string; user_md?: string; agents_md?: string }> {
+  const fetched = await fetchGatewayMetadata(agent);
+  const metadata = {
+    soul_md: fetched.soul_md ?? agent.soul_md ?? buildSoulMd(agent),
+    user_md: fetched.user_md ?? agent.user_md ?? buildUserMd(agent),
+    agents_md: fetched.agents_md ?? agent.agents_md ?? buildAgentsMd(agent),
+  };
+
+  writeGatewayAgentMetadata(agent, metadata);
+
+  run(
+    `UPDATE agents SET soul_md = ?, user_md = ?, agents_md = ?, updated_at = ? WHERE id = ?`,
+    [metadata.soul_md, metadata.user_md, metadata.agents_md, new Date().toISOString(), agent.id]
+  );
+
+  return metadata;
 }
 
 export function importGatewayMetadata(agent: Agent): { soul_md?: string; user_md?: string; agents_md?: string } {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
-import { queryOne, queryAll, run, transaction } from '@/lib/db';
-import { buildAgentsMd, buildSoulMd, buildUserMd, ensureGatewayAgentMetadata } from '@/lib/gateway-agent-metadata';
+import { queryAll, queryOne, run, transaction } from '@/lib/db';
+import { buildAgentsMd, buildSoulMd, buildUserMd, ensureGatewayAgentMetadata, syncGatewayMetadata } from '@/lib/gateway-agent-metadata';
 import type { Agent } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -28,7 +28,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate each agent
     for (const agentReq of body.agents) {
       if (!agentReq.gateway_agent_id || !agentReq.name) {
         return NextResponse.json(
@@ -38,32 +37,35 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Check for conflicts (already imported)
     const existingImports = queryAll<Agent>(
       `SELECT * FROM agents WHERE gateway_agent_id IS NOT NULL`
     );
-    const importedGatewayIds = new Set(existingImports.map((a) => a.gateway_agent_id));
+    const importedPairs = new Set(
+      existingImports.map((a) => `${a.workspace_id || 'default'}::${a.gateway_agent_id}`)
+    );
 
     const results: { imported: Agent[]; skipped: { gateway_agent_id: string; reason: string }[] } = {
       imported: [],
       skipped: [],
     };
+    const importedIds: string[] = [];
 
     transaction(() => {
       const now = new Date().toISOString();
 
       for (const agentReq of body.agents) {
-        // Skip if already imported
-        if (importedGatewayIds.has(agentReq.gateway_agent_id)) {
+        const workspaceId = agentReq.workspace_id || 'default';
+        const importKey = `${workspaceId}::${agentReq.gateway_agent_id}`;
+
+        if (importedPairs.has(importKey)) {
           results.skipped.push({
             gateway_agent_id: agentReq.gateway_agent_id,
-            reason: 'Already imported',
+            reason: 'Already imported in this workspace',
           });
           continue;
         }
 
         const id = uuidv4();
-        const workspaceId = agentReq.workspace_id || 'default';
 
         const baseAgent: Agent = {
           id,
@@ -110,20 +112,34 @@ export async function POST(request: NextRequest) {
           ]
         );
 
-        // Log event
         run(
           `INSERT INTO events (id, type, agent_id, message, created_at)
            VALUES (?, ?, ?, ?, ?)`,
           [uuidv4(), 'agent_joined', id, `${agentReq.name} imported from OpenClaw Gateway`, now]
         );
 
-        const agent = queryOne<Agent>('SELECT * FROM agents WHERE id = ?', [id]);
-        if (agent) {
-          ensureGatewayAgentMetadata(agent);
-          results.imported.push(agent);
-        }
+        importedPairs.add(importKey);
+        importedIds.push(id);
       }
     });
+
+    for (const id of importedIds) {
+      const agent = queryOne<Agent>('SELECT * FROM agents WHERE id = ?', [id]);
+      if (!agent) continue;
+
+      ensureGatewayAgentMetadata(agent);
+
+      try {
+        await syncGatewayMetadata(agent);
+      } catch (error) {
+        console.error(`Failed to sync gateway metadata for agent ${agent.id}:`, error);
+      }
+
+      const refreshed = queryOne<Agent>('SELECT * FROM agents WHERE id = ?', [id]);
+      if (refreshed) {
+        results.imported.push(refreshed);
+      }
+    }
 
     return NextResponse.json(results, { status: 201 });
   } catch (error) {

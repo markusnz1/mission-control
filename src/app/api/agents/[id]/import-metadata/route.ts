@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryOne } from '@/lib/db';
-import { ensureGatewayAgentMetadata, importGatewayMetadata, getGatewayAgentWorkspaceInfo } from '@/lib/gateway-agent-metadata';
+import { ensureGatewayAgentMetadata, importGatewayMetadata, getGatewayAgentWorkspaceInfo, syncGatewayMetadata } from '@/lib/gateway-agent-metadata';
 import type { Agent } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -22,8 +22,10 @@ export async function POST(
     }
 
     ensureGatewayAgentMetadata(agent);
-    const imported = importGatewayMetadata(agent);
-    const workspace = getGatewayAgentWorkspaceInfo(agent);
+    await syncGatewayMetadata(agent);
+    const refreshedAgent = queryOne<Agent>('SELECT * FROM agents WHERE id = ?', [id]) || agent;
+    const imported = importGatewayMetadata(refreshedAgent);
+    const workspace = getGatewayAgentWorkspaceInfo(refreshedAgent);
 
     return NextResponse.json({
       success: true,
