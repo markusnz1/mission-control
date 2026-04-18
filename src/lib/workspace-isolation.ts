@@ -65,6 +65,10 @@ export interface WorkspaceStatus {
   conflicts?: string[];
 }
 
+function pathExists(candidate: string | null | undefined): candidate is string {
+  return typeof candidate === 'string' && candidate.length > 0 && existsSync(candidate);
+}
+
 // ─── Port Allocator ──────────────────────────────────────────────────
 
 const PORT_RANGE_START = 4200;
@@ -289,8 +293,9 @@ async function createSandboxWorkspace(
   port: number
 ): Promise<WorkspaceInfo> {
   // Ensure source directory exists
-  if (!existsSync(projectDir)) {
-    mkdirSync(projectDir, { recursive: true });
+  const sourceDir = projectDir;
+  if (!pathExists(sourceDir)) {
+    mkdirSync(sourceDir, { recursive: true });
   }
 
   // rsync the project directory, excluding heavy/generated dirs
@@ -310,7 +315,8 @@ async function createSandboxWorkspace(
 // ─── Workspace Status ────────────────────────────────────────────────
 
 export function getWorkspaceStatus(task: Task): WorkspaceStatus {
-  if (!task.workspace_path || !existsSync(task.workspace_path)) {
+  const workspacePath = task.workspace_path;
+  if (!pathExists(workspacePath)) {
     return { exists: false };
   }
 
@@ -318,7 +324,7 @@ export function getWorkspaceStatus(task: Task): WorkspaceStatus {
   const result: WorkspaceStatus = {
     exists: true,
     strategy,
-    path: task.workspace_path,
+    path: workspacePath,
     port: task.workspace_port || undefined,
     baseBranch: task.repo_branch || 'main',
     baseCommit: task.workspace_base_commit || undefined,
@@ -326,7 +332,7 @@ export function getWorkspaceStatus(task: Task): WorkspaceStatus {
   };
 
   // Read metadata for branch info
-  const metadataPath = path.join(task.workspace_path, '.mc-workspace.json');
+  const metadataPath = path.join(workspacePath, '.mc-workspace.json');
   if (existsSync(metadataPath)) {
     try {
       const metadata: WorkspaceMetadata = JSON.parse(readFileSync(metadataPath, 'utf-8'));
@@ -337,11 +343,11 @@ export function getWorkspaceStatus(task: Task): WorkspaceStatus {
   }
 
   // Get diff stats
-  if (strategy === 'worktree' && existsSync(path.join(task.workspace_path, '.git'))) {
+  if (strategy === 'worktree' && pathExists(path.join(workspacePath, '.git'))) {
     try {
       const diffStat = execSync(
         `git diff --stat HEAD~1 2>/dev/null || git diff --stat --cached 2>/dev/null || echo ""`,
-        { cwd: task.workspace_path, encoding: 'utf-8', timeout: 10000 }
+        { cwd: workspacePath, encoding: 'utf-8', timeout: 10000 }
       );
       const lines = diffStat.trim().split('\n');
       const summary = lines[lines.length - 1] || '';
@@ -356,10 +362,10 @@ export function getWorkspaceStatus(task: Task): WorkspaceStatus {
     }
   } else if (strategy === 'sandbox') {
     // For sandbox, count files that differ from original
-    const projectDir = path.dirname(path.dirname(task.workspace_path)); // Up from .workspaces/task-xxx
+    const projectDir = path.dirname(path.dirname(workspacePath)); // Up from .workspaces/task-xxx
     try {
       const diff = execSync(
-        `diff -rq "${projectDir}" "${task.workspace_path}" --exclude='.workspaces' --exclude='node_modules' --exclude='.next' --exclude='.mc-workspace.json' 2>/dev/null | wc -l`,
+        `diff -rq "${projectDir}" "${workspacePath}" --exclude='.workspaces' --exclude='node_modules' --exclude='.next' --exclude='.mc-workspace.json' 2>/dev/null | wc -l`,
         { encoding: 'utf-8', timeout: 10000 }
       ).trim();
       result.filesChanged = parseInt(diff) || 0;
@@ -378,7 +384,8 @@ export async function mergeWorkspace(task: Task, options?: { force?: boolean; cr
     return { success: false, status: 'failed', mergeLog: 'No workspace to merge' };
   }
 
-  if (!existsSync(task.workspace_path)) {
+  const workspacePath = task.workspace_path;
+  if (!pathExists(workspacePath)) {
     return { success: false, status: 'failed', mergeLog: 'Workspace directory not found' };
   }
 
@@ -622,7 +629,7 @@ export function getActiveWorkspaces(productId: string): Array<{
 
   return tasks.map(t => {
     let branch: string | undefined;
-    if (t.workspace_path && existsSync(path.join(t.workspace_path, '.mc-workspace.json'))) {
+    if (t.workspace_path && pathExists(path.join(t.workspace_path, '.mc-workspace.json'))) {
       try {
         const meta = JSON.parse(readFileSync(path.join(t.workspace_path, '.mc-workspace.json'), 'utf-8'));
         branch = meta.branch;
@@ -706,12 +713,11 @@ export async function cleanupOrphanedWorkspaces(): Promise<{
   );
 
   for (const task of orphaned) {
-    const wp = task.workspace_path!;
-    // eslint-disable-next-line etc/tp1004
-    if (!existsSync(wp)) {
+    const wp = task.workspace_path;
+    if (!pathExists(wp)) {
       // Already cleaned up externally — just clear the DB reference
       run(`UPDATE tasks SET workspace_path = NULL, workspace_strategy = NULL WHERE id = ?`, [task.id]);
-      cleaned.push(wp);
+      if (wp) cleaned.push(wp);
       continue;
     }
 

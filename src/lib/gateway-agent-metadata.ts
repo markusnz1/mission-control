@@ -249,11 +249,8 @@ export function importGatewayMetadata(agent: Agent): { soul_md?: string; user_md
   const info = ensureGatewayAgentMetadata(agent);
   const updates: { soul_md?: string; user_md?: string; agents_md?: string } = {};
 
-  // eslint-disable-next-line etc/tp1004
   if (fs.existsSync(info.soulPath)) updates.soul_md = fs.readFileSync(info.soulPath, 'utf8');
-  // eslint-disable-next-line etc/tp1004
   if (fs.existsSync(info.userPath)) updates.user_md = fs.readFileSync(info.userPath, 'utf8');
-  // eslint-disable-next-line etc/tp1004
   if (fs.existsSync(info.agentsPath)) updates.agents_md = fs.readFileSync(info.agentsPath, 'utf8');
 
   run(
