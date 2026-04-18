@@ -7,7 +7,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { broadcast } from '@/lib/events';
 import { CreateDeliverableSchema } from '@/lib/validation';
-import { existsSync } from 'fs';
+import { accessSync, constants } from 'fs';
+
+function pathAccessible(targetPath: string): boolean {
+  try {
+    accessSync(targetPath, constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 import type { TaskDeliverable } from '@/lib/types';
 
@@ -71,7 +80,7 @@ export async function POST(
       const inputPath = path;
       const expandedPath = inputPath.replace(/^~/, process.env.HOME || '');
       normalizedPath = expandedPath;
-      fileExists = existsSync(expandedPath);
+      fileExists = pathAccessible(expandedPath);
       if (!fileExists) {
         console.warn(`[DELIVERABLE] Warning: File does not exist: ${normalizedPath}`);
       }
