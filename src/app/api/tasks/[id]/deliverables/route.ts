@@ -68,9 +68,10 @@ export async function POST(
     let fileExists = true;
     let normalizedPath = path;
     if (deliverable_type === 'file' && path) {
-      // Expand tilde
-      normalizedPath = path.replace(/^~/, process.env.HOME || '');
-      fileExists = existsSync(normalizedPath);
+      const inputPath = path;
+      const expandedPath = inputPath.replace(/^~/, process.env.HOME || '');
+      normalizedPath = expandedPath;
+      fileExists = existsSync(expandedPath);
       if (!fileExists) {
         console.warn(`[DELIVERABLE] Warning: File does not exist: ${normalizedPath}`);
       }

@@ -65,8 +65,12 @@ export interface WorkspaceStatus {
   conflicts?: string[];
 }
 
-function pathExists(candidate: string | null | undefined): candidate is string {
-  return typeof candidate === 'string' && candidate.length > 0 && existsSync(candidate);
+function isNonEmptyPath(candidate: string | null | undefined): candidate is string {
+  return typeof candidate === 'string' && candidate.length > 0;
+}
+
+function fileExistsAt(filePath: string): boolean {
+  return existsSync(filePath);
 }
 
 // ─── Port Allocator ──────────────────────────────────────────────────
@@ -169,9 +173,11 @@ export async function createTaskWorkspace(task: Task): Promise<WorkspaceInfo> {
 
   // Add .workspaces to .gitignore if it's a git repo
   const gitignorePath = path.join(projectDir, '.gitignore');
-  if (existsSync(path.join(projectDir, '.git'))) {
+  const projectGitDir = path.join(projectDir, '.git');
+  if (fileExistsAt(projectGitDir)) {
     try {
-      const gitignore = existsSync(gitignorePath) ? readFileSync(gitignorePath, 'utf-8') : '';
+      const gitignoreExists = fileExistsAt(gitignorePath);
+      const gitignore = gitignoreExists ? readFileSync(gitignorePath, 'utf-8') : '';
       if (!gitignore.includes('.workspaces')) {
         writeFileSync(gitignorePath, gitignore.trimEnd() + '\n.workspaces/\n');
       }
@@ -225,7 +231,8 @@ async function createWorktreeWorkspace(
   const branchName = `autopilot/${featureSlug}`;
 
   // Check if this is a cloned repo or we need to clone
-  const isGitRepo = existsSync(path.join(projectDir, '.git'));
+  const gitDir = path.join(projectDir, '.git');
+  const isGitRepo = fileExistsAt(gitDir);
 
   if (isGitRepo) {
     // Use git worktree from existing repo
@@ -294,7 +301,7 @@ async function createSandboxWorkspace(
 ): Promise<WorkspaceInfo> {
   // Ensure source directory exists
   const sourceDir = projectDir;
-  if (!pathExists(sourceDir)) {
+  if (!isNonEmptyPath(sourceDir) || !fileExistsAt(sourceDir)) {
     mkdirSync(sourceDir, { recursive: true });
   }
 
@@ -316,7 +323,10 @@ async function createSandboxWorkspace(
 
 export function getWorkspaceStatus(task: Task): WorkspaceStatus {
   const workspacePath = task.workspace_path;
-  if (!pathExists(workspacePath)) {
+  if (!isNonEmptyPath(workspacePath)) {
+    return { exists: false };
+  }
+  if (!fileExistsAt(workspacePath)) {
     return { exists: false };
   }
 
@@ -333,7 +343,7 @@ export function getWorkspaceStatus(task: Task): WorkspaceStatus {
 
   // Read metadata for branch info
   const metadataPath = path.join(workspacePath, '.mc-workspace.json');
-  if (existsSync(metadataPath)) {
+  if (fileExistsAt(metadataPath)) {
     try {
       const metadata: WorkspaceMetadata = JSON.parse(readFileSync(metadataPath, 'utf-8'));
       result.branch = metadata.branch;
@@ -343,7 +353,8 @@ export function getWorkspaceStatus(task: Task): WorkspaceStatus {
   }
 
   // Get diff stats
-  if (strategy === 'worktree' && pathExists(path.join(workspacePath, '.git'))) {
+  const gitDir = path.join(workspacePath, '.git');
+  if (strategy === 'worktree' && fileExistsAt(gitDir)) {
     try {
       const diffStat = execSync(
         `git diff --stat HEAD~1 2>/dev/null || git diff --stat --cached 2>/dev/null || echo ""`,
@@ -385,7 +396,10 @@ export async function mergeWorkspace(task: Task, options?: { force?: boolean; cr
   }
 
   const workspacePath = task.workspace_path;
-  if (!pathExists(workspacePath)) {
+  if (!isNonEmptyPath(workspacePath)) {
+    return { success: false, status: 'failed', mergeLog: 'Workspace directory not found' };
+  }
+  if (!fileExistsAt(workspacePath)) {
     return { success: false, status: 'failed', mergeLog: 'Workspace directory not found' };
   }
 
@@ -411,7 +425,7 @@ async function mergeWorktree(
   // Read metadata for branch name
   let branch = `autopilot/${task.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 50)}`;
   const metadataPath = path.join(workspacePath, '.mc-workspace.json');
-  if (existsSync(metadataPath)) {
+  if (fileExistsAt(metadataPath)) {
     try {
       const metadata = JSON.parse(readFileSync(metadataPath, 'utf-8'));
       if (metadata.branch) branch = metadata.branch;
@@ -566,7 +580,7 @@ export function cleanupWorkspace(task: Task): boolean {
 
       // Try to delete the branch
       const metadataPath = path.join(workspacePath, '.mc-workspace.json');
-      if (existsSync(metadataPath)) {
+      if (fileExistsAt(metadataPath)) {
         try {
           const metadata = JSON.parse(readFileSync(metadataPath, 'utf-8'));
           if (metadata.branch) {
@@ -591,7 +605,7 @@ export function cleanupWorkspace(task: Task): boolean {
 
     // Update metadata status
     const metadataPath = path.join(workspacePath, '.mc-workspace.json');
-    if (existsSync(metadataPath)) {
+    if (fileExistsAt(metadataPath)) {
       try {
         const metadata = JSON.parse(readFileSync(metadataPath, 'utf-8'));
         metadata.status = 'abandoned';
@@ -629,11 +643,14 @@ export function getActiveWorkspaces(productId: string): Array<{
 
   return tasks.map(t => {
     let branch: string | undefined;
-    if (t.workspace_path && pathExists(path.join(t.workspace_path, '.mc-workspace.json'))) {
-      try {
-        const meta = JSON.parse(readFileSync(path.join(t.workspace_path, '.mc-workspace.json'), 'utf-8'));
-        branch = meta.branch;
-      } catch { /* ignore */ }
+    if (t.workspace_path) {
+      const metadataPath = path.join(t.workspace_path, '.mc-workspace.json');
+      if (fileExistsAt(metadataPath)) {
+        try {
+          const meta = JSON.parse(readFileSync(metadataPath, 'utf-8'));
+          branch = meta.branch;
+        } catch { /* ignore */ }
+      }
     }
 
     return {
@@ -714,7 +731,7 @@ export async function cleanupOrphanedWorkspaces(): Promise<{
 
   for (const task of orphaned) {
     const wp = task.workspace_path;
-    if (!pathExists(wp)) {
+    if (!isNonEmptyPath(wp) || !fileExistsAt(wp)) {
       // Already cleaned up externally — just clear the DB reference
       run(`UPDATE tasks SET workspace_path = NULL, workspace_strategy = NULL WHERE id = ?`, [task.id]);
       if (wp) cleaned.push(wp);
@@ -725,7 +742,7 @@ export async function cleanupOrphanedWorkspaces(): Promise<{
       // Read branch name from metadata
       const metadataPath = path.join(wp, '.mc-workspace.json');
       let branchName: string | null = null;
-      if (existsSync(metadataPath)) {
+      if (fileExistsAt(metadataPath)) {
         try {
           const meta = JSON.parse(readFileSync(metadataPath, 'utf-8'));
           branchName = meta.branch || null;
