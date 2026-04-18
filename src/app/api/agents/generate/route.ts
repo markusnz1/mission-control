@@ -100,18 +100,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const session = await client.createSession('agent-generator', 'agent-generator');
+    // Use an invented session key — the gateway accepts any session key format.
+    // Following the pattern from convoy/route.ts: session keys are arbitrary identifiers.
+    const sessionKey = `agent:main:generate:${Date.now()}`;
     const prompt = buildPrompt({ name, description, role: requestedRole });
 
     await client.call('chat.send', {
-      sessionKey: session.id,
+      sessionKey,
       message: prompt,
-      idempotencyKey: `agent-generate-${session.id}-${Date.now()}`,
+      idempotencyKey: `agent-generate-${Date.now()}`,
     });
 
     for (let attempt = 0; attempt < 10; attempt += 1) {
       await sleep(1000);
-      const history = await client.getSessionHistory(session.id) as Array<Record<string, unknown>>;
+      const history = await client.getSessionHistory(sessionKey) as Array<Record<string, unknown>>;
 
       for (let index = history.length - 1; index >= 0; index -= 1) {
         const entry = history[index];
