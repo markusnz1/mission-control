@@ -263,7 +263,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           sessionKey: `agent:main:${openclawSessionId}`,
           message: '// boot session',
           idempotencyKey: `boot-${openclawSessionId}`,
-          ...(agent.model ? { model: agent.model } : {}),
         });
       } catch (err) {
         console.warn('[Dispatch] Failed to pre-create OpenClaw session with exec capability:', err);
@@ -624,7 +623,6 @@ If you need help or clarification, ask the orchestrator.`;
         sessionKey,
         message: finalMessage,
         idempotencyKey: `dispatch-${task.id}-${Date.now()}`,
-        ...(agent.model ? { model: agent.model } : {}),
         ...(spawnConfig ? { spawnConfig } : {}),
       });
 
