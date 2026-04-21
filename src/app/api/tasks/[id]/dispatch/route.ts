@@ -111,12 +111,17 @@ function deriveUserIntendedPath(task: Task, projectsPath: string, product?: Prod
     return extractedDescriptionPath;
   }
 
-  const fallbackPath = `${projectsPath}/${slugifyTaskTitle(task.title)}`;
-  console.log('[Dispatch] deriveUserIntendedPath falling back to task-title path', {
+  // 4. Fallback to workspace slug (not task title)
+  const wsId = task.workspace_id || 'default';
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}/i.test(wsId);
+  const workspaceSlug = isUuid
+    ? slugifyTaskTitle(task.title)
+    : wsId.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+  const fallbackPath = `${projectsPath}/${workspaceSlug}`;
+  console.log('[Dispatch] deriveUserIntendedPath falling back to workspace path', {
     taskId: task.id,
     taskTitle: task.title,
-    productId: task.product_id || null,
-    productName,
+    workspaceId: wsId,
     fallbackPath,
   });
   return fallbackPath;
