@@ -15,6 +15,10 @@ import { queryOne, queryAll, run } from '@/lib/db';
 import { getProjectsPath } from '@/lib/config';
 import type { Task, Product } from '@/lib/types';
 
+function slugifyProjectSegment(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
 // ─── Types ───────────────────────────────────────────────────────────
 
 export type IsolationStrategy = 'worktree' | 'sandbox';
@@ -140,7 +144,21 @@ export function determineIsolationStrategy(task: Task): IsolationStrategy | null
 
 function getProductProjectDir(task: Task): string {
   const projectsPath = getProjectsPath();
-  const projectDir = task.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const product = task.product_id
+    ? queryOne<Product>('SELECT * FROM products WHERE id = ?', [task.product_id])
+    : null;
+  const projectDir = product
+    ? slugifyProjectSegment(product.name)
+    : slugifyProjectSegment(task.title);
+
+  console.log('[WorkspaceIsolation] getProductProjectDir', {
+    taskId: task.id,
+    taskTitle: task.title,
+    productId: task.product_id || null,
+    productName: product?.name || null,
+    resolvedProjectDir: projectDir,
+  });
+
   return path.resolve(projectsPath.replace('~', process.env.HOME || ''), projectDir);
 }
 

@@ -55,13 +55,30 @@ function extractExplicitWorkspacePath(description?: string): string | null {
 }
 
 function deriveUserIntendedPath(task: Task, projectsPath: string, product?: Product | null): string {
+  const productName = product && 'name' in product ? product.name : null;
   const explicitTaskPath = sanitizeExtractedPath(task.workspace_path || '');
   if (explicitTaskPath) {
+    console.log('[Dispatch] deriveUserIntendedPath using explicit workspace_path', {
+      taskId: task.id,
+      taskTitle: task.title,
+      productId: task.product_id || null,
+      productName,
+      workspacePath: task.workspace_path,
+      resolvedPath: explicitTaskPath,
+    });
     return explicitTaskPath;
   }
 
-  if (product) {
-    return `${projectsPath}/${slugifyProductName(product.name)}`;
+  if (productName) {
+    const resolvedPath = `${projectsPath}/${slugifyProductName(productName)}`;
+    console.log('[Dispatch] deriveUserIntendedPath using product path', {
+      taskId: task.id,
+      taskTitle: task.title,
+      productId: task.product_id || null,
+      productName,
+      resolvedPath,
+    });
+    return resolvedPath;
   }
 
   const extractedDescriptionPath = extractExplicitWorkspacePath(task.description);
@@ -70,13 +87,39 @@ function deriveUserIntendedPath(task: Task, projectsPath: string, product?: Prod
       const repoNameMatch = task.repo_url.match(/\/([^/]+?)(?:\.git)?\/?$/);
       const repoName = repoNameMatch?.[1];
       if (repoName && /\/(projects|Documents)\/?$/i.test(extractedDescriptionPath)) {
-        return `${extractedDescriptionPath.replace(/\/$/, '')}/${repoName}`;
+        const resolvedPath = `${extractedDescriptionPath.replace(/\/$/, '')}/${repoName}`;
+        console.log('[Dispatch] deriveUserIntendedPath using extracted description path plus repo name', {
+          taskId: task.id,
+          taskTitle: task.title,
+          productId: task.product_id || null,
+          productName,
+          extractedDescriptionPath,
+          repoName,
+          resolvedPath,
+        });
+        return resolvedPath;
       }
     }
+
+    console.log('[Dispatch] deriveUserIntendedPath using extracted description path', {
+      taskId: task.id,
+      taskTitle: task.title,
+      productId: task.product_id || null,
+      productName,
+      extractedDescriptionPath,
+    });
     return extractedDescriptionPath;
   }
 
-  return `${projectsPath}/${slugifyTaskTitle(task.title)}`;
+  const fallbackPath = `${projectsPath}/${slugifyTaskTitle(task.title)}`;
+  console.log('[Dispatch] deriveUserIntendedPath falling back to task-title path', {
+    taskId: task.id,
+    taskTitle: task.title,
+    productId: task.product_id || null,
+    productName,
+    fallbackPath,
+  });
+  return fallbackPath;
 }
 
 export const dynamic = 'force-dynamic';
@@ -240,6 +283,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const product = task.product_id
       ? queryOne<Product>('SELECT * FROM products WHERE id = ?', [task.product_id])
       : null;
+
+    console.log('[Dispatch] Loaded task/product context', {
+      taskId: task.id,
+      taskTitle: task.title,
+      taskProductId: task.product_id || null,
+      productFound: Boolean(product),
+      productName: product?.name || null,
+      existingWorkspacePath: task.workspace_path || null,
+    });
 
     // Cost cap warning check
     let costCapWarning: string | undefined;
@@ -519,8 +571,8 @@ ${task.due_date ? `**Due:** ${task.due_date}\n` : ''}
 **Task ID:** ${task.id}
 ${planningSpecSection}${agentInstructionsSection}${skillsSection}${knowledgeSection}${imagesSection}${buildCheckpointContext(task.id) || ''}${formatMailForDispatch(agent.id) || ''}${repoSection}
 ${isBuilder ? (workspaceIsolated
-  ? `**\u{1F512} ISOLATED WORKSPACE:** ${taskProjectDir}\n- **Use this exact path:** ${taskProjectDir}\n- **Port:** ${workspacePort || 'default'} (use this for dev server, NOT the default)\n${workspaceBranchName ? `- **Branch:** ${workspaceBranchName}\n` : ''}- **IMPORTANT:** Do NOT modify files outside this workspace directory. Other agents may be working on the same project in parallel. All your work must stay within: ${taskProjectDir}\nCreate this directory if needed and save all deliverables there.\n`
-  : `**OUTPUT DIRECTORY:** ${taskProjectDir}\n- **Use this exact path:** ${taskProjectDir}\nCreate this directory and save all deliverables there.\n`)
+  ? `**\u{1F512} ISOLATED WORKSPACE:** ${taskProjectDir}\n**REQUIRED WORKSPACE PATH: ${taskProjectDir}**\n- **Use this exact path:** ${taskProjectDir}\n- **Do not rename or substitute this folder with a task-title slug.**\n- **Port:** ${workspacePort || 'default'} (use this for dev server, NOT the default)\n${workspaceBranchName ? `- **Branch:** ${workspaceBranchName}\n` : ''}- **IMPORTANT:** Do NOT modify files outside this workspace directory. Other agents may be working on the same project in parallel. All your work must stay within: ${taskProjectDir}\nCreate this directory if needed and save all deliverables there.\n`
+  : `**OUTPUT DIRECTORY:** ${taskProjectDir}\n**REQUIRED WORKSPACE PATH: ${taskProjectDir}**\n- **Use this exact path:** ${taskProjectDir}\n- **Do not rename or substitute this folder with a task-title slug.**\nCreate this directory and save all deliverables there.\n`)
 : `**OUTPUT DIRECTORY:** ${taskProjectDir}\n`}
 ${completionInstructions}
 
@@ -529,6 +581,17 @@ If you need help or clarification, ask the orchestrator.`;
     // Inject any pending operator notes (queued via /btw chat)
     const { formatted: pendingNotes } = getPendingNotesForDispatch(id);
     const finalMessage = pendingNotes ? taskMessage + pendingNotes : taskMessage;
+
+    console.log('[Dispatch] Final workspace instructions', {
+      taskId: task.id,
+      taskTitle: task.title,
+      userIntendedProjectDir,
+      dispatchedTaskProjectDir: taskProjectDir,
+      workspaceIsolated,
+      workspaceBranchName: workspaceBranchName || null,
+      workspacePort: workspacePort || null,
+      finalMessageIncludesExactPath: finalMessage.includes(`Use this exact path: ${taskProjectDir}`),
+    });
 
     // Send message to agent's session using chat.send
     try {
