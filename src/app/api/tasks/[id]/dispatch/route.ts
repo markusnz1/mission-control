@@ -570,17 +570,20 @@ Reply with: \`VERIFY_PASS: [summary]\` or \`VERIFY_FAIL: [what failed]\``;
     }
 
     const roleLabel = currentStage?.label || 'Task';
+    const builderWorkspaceHeader = isBuilder
+      ? `🚨 **WORKSPACE: \`${taskProjectDir}\`** 🚨\n\n**CLONE TO THIS EXACT PATH:** \`${taskProjectDir}\`\n**DO NOT** create a folder named after the repo. Use **THIS** path: \`${taskProjectDir}\`\nYou **MUST** clone to \`${taskProjectDir}\` , the repo folder name should **NOT** appear in your clone command. The target directory **IS** \`${taskProjectDir}\`.\n${task.description ? `**IMPORTANT:** The URL in the description below is the **SOURCE** repo. You must clone it **TO** \`${taskProjectDir}\` (the workspace path), **NOT** to a folder named after the repo.\n` : ''}\n`
+      : '';
     const taskMessage = `${priorityEmoji} **${isBuilder ? 'NEW TASK ASSIGNED' : `${roleLabel.toUpperCase()} STAGE — ${task.title}`}**
 
-**Title:** ${task.title}
+${builderWorkspaceHeader}**Title:** ${task.title}
 ${task.description ? `**Description:** ${task.description}\n` : ''}
 **Priority:** ${task.priority.toUpperCase()}
 ${task.due_date ? `**Due:** ${task.due_date}\n` : ''}
 **Task ID:** ${task.id}
 ${planningSpecSection}${agentInstructionsSection}${skillsSection}${knowledgeSection}${imagesSection}${buildCheckpointContext(task.id) || ''}${formatMailForDispatch(agent.id) || ''}${repoSection}
 ${isBuilder ? (workspaceIsolated
-  ? `**\u{1F512} ISOLATED WORKSPACE:** ${taskProjectDir}\n**REQUIRED WORKSPACE PATH: ${taskProjectDir}**\n- **Use this exact path:** ${taskProjectDir}\n- **Do not rename or substitute this folder with a task-title slug.**\n- **Port:** ${workspacePort || 'default'} (use this for dev server, NOT the default)\n${workspaceBranchName ? `- **Branch:** ${workspaceBranchName}\n` : ''}- **IMPORTANT:** Do NOT modify files outside this workspace directory. Other agents may be working on the same project in parallel. All your work must stay within: ${taskProjectDir}\nCreate this directory if needed and save all deliverables there.\n`
-  : `**OUTPUT DIRECTORY:** ${taskProjectDir}\n**REQUIRED WORKSPACE PATH: ${taskProjectDir}**\n- **Use this exact path:** ${taskProjectDir}\n- **Do not rename or substitute this folder with a task-title slug.**\nCreate this directory and save all deliverables there.\n`)
+  ? `**\u{1F512} ISOLATED WORKSPACE:** \`${taskProjectDir}\`\n**REQUIRED WORKSPACE PATH:** \`${taskProjectDir}\`\n- **Use this exact path:** \`${taskProjectDir}\`\n- **Do not rename or substitute this folder with a task-title slug.**\n- **Port:** ${workspacePort || 'default'} (use this for dev server, NOT the default)\n${workspaceBranchName ? `- **Branch:** ${workspaceBranchName}\n` : ''}- **IMPORTANT:** Do NOT modify files outside this workspace directory. Other agents may be working on the same project in parallel. All your work must stay within: \`${taskProjectDir}\`\nCreate this directory if needed and save all deliverables there.\n**REMINDER:** Cloning destination = \`${taskProjectDir}\` (**NOT** the repo name, **NOT** a new folder, this exact path).\n`
+  : `**OUTPUT DIRECTORY:** \`${taskProjectDir}\`\n**REQUIRED WORKSPACE PATH:** \`${taskProjectDir}\`\n- **Use this exact path:** \`${taskProjectDir}\`\n- **Do not rename or substitute this folder with a task-title slug.**\nCreate this directory and save all deliverables there.\n**REMINDER:** Cloning destination = \`${taskProjectDir}\` (**NOT** the repo name, **NOT** a new folder, this exact path).\n`)
 : `**OUTPUT DIRECTORY:** ${taskProjectDir}\n`}
 ${completionInstructions}
 
