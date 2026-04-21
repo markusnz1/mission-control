@@ -207,11 +207,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
 
       try {
-        // Use chat.send to boot the session with exec capability
+        // Use chat.send to boot the session
         await client.call('chat.send', {
           sessionKey: `agent:main:${openclawSessionId}`,
           message: '// boot session',
-          capabilities: ['exec'],
+          idempotencyKey: `boot-${openclawSessionId}`,
         });
       } catch (err) {
         console.warn('[Dispatch] Failed to pre-create OpenClaw session with exec capability:', err);
