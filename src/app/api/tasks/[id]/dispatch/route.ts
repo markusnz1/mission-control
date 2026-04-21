@@ -199,7 +199,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
 
       try {
-        await client.createSession('mission-control', openclawSessionId, ['exec']);
+        // Use chat.send to boot the session with exec capability
+        await client.call('chat.send', {
+          sessionKey: `agent:main:${openclawSessionId}`,
+          message: '// boot session',
+          capabilities: ['exec'],
+        });
       } catch (err) {
         console.warn('[Dispatch] Failed to pre-create OpenClaw session with exec capability:', err);
       }
