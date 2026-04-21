@@ -573,7 +573,7 @@ Reply with: \`VERIFY_PASS: [summary]\` or \`VERIFY_FAIL: [what failed]\``;
 
     const roleLabel = currentStage?.label || 'Task';
     const builderWorkspaceHeader = isBuilder
-      ? `🚨 **WORKSPACE: \`${taskProjectDir}\`** 🚨\n\n**CLONE TO THIS EXACT PATH:** \`${taskProjectDir}\`\n**DO NOT** create a folder named after the repo. Use **THIS** path: \`${taskProjectDir}\`\nYou **MUST** clone to \`${taskProjectDir}\` , the repo folder name should **NOT** appear in your clone command. The target directory **IS** \`${taskProjectDir}\`.\n${task.description ? `**IMPORTANT:** The URL in the description below is the **SOURCE** repo. You must clone it **TO** \`${taskProjectDir}\` (the workspace path), **NOT** to a folder named after the repo.\n` : ''}\n`
+      ? `🚨 **WORKSPACE: \`${taskProjectDir}\`** 🚨\n\n`
       : '';
     const taskMessage = `${priorityEmoji} **${isBuilder ? 'NEW TASK ASSIGNED' : `${roleLabel.toUpperCase()} STAGE — ${task.title}`}**
 
