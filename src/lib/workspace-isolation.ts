@@ -166,8 +166,8 @@ function getWorkspacesRoot(projectDir: string): string {
   return path.join(projectDir, '.workspaces');
 }
 
-function getTaskWorkspaceDir(projectDir: string, taskId: string): string {
-  return path.join(getWorkspacesRoot(projectDir), `task-${taskId}`);
+function getTaskWorkspaceDir(projectDir: string, _taskId: string): string {
+  return projectDir;
 }
 
 // ─── Workspace Creation ──────────────────────────────────────────────
@@ -189,25 +189,6 @@ export async function createTaskWorkspace(task: Task): Promise<WorkspaceInfo> {
   const workspaceDir = getTaskWorkspaceDir(projectDir, task.id);
   const baseBranch = task.repo_branch || 'main';
   const port = allocatePort(task.id, task.product_id);
-
-  // Ensure .workspaces directory exists
-  const workspacesRoot = getWorkspacesRoot(projectDir);
-  mkdirSync(workspacesRoot, { recursive: true });
-
-  // Add .workspaces to .gitignore if it's a git repo
-  const gitignorePath = path.join(projectDir, '.gitignore');
-  const projectGitDir = path.join(projectDir, '.git');
-  if (pathAccessible(projectGitDir)) {
-    try {
-      const gitignoreExists = pathAccessible(gitignorePath);
-      const gitignore = gitignoreExists ? readFileSync(gitignorePath, 'utf-8') : '';
-      if (!gitignore.includes('.workspaces')) {
-        writeFileSync(gitignorePath, gitignore.trimEnd() + '\n.workspaces/\n');
-      }
-    } catch {
-      // Best effort
-    }
-  }
 
   let result: WorkspaceInfo;
 
@@ -394,18 +375,6 @@ export function getWorkspaceStatus(task: Task): WorkspaceStatus {
     } catch {
       // Ignore diff errors
     }
-  } else if (strategy === 'sandbox') {
-    // For sandbox, count files that differ from original
-    const projectDir = path.dirname(path.dirname(workspacePath)); // Up from .workspaces/task-xxx
-    try {
-      const diff = execSync(
-        `diff -rq "${projectDir}" "${workspacePath}" --exclude='.workspaces' --exclude='node_modules' --exclude='.next' --exclude='.mc-workspace.json' 2>/dev/null | wc -l`,
-        { encoding: 'utf-8', timeout: 10000 }
-      ).trim();
-      result.filesChanged = parseInt(diff) || 0;
-    } catch {
-      // Ignore
-    }
   }
 
   return result;
@@ -530,8 +499,7 @@ async function mergeSandbox(
   _options?: { force?: boolean }
 ): Promise<MergeResult> {
   const workspacePath = task.workspace_path!;
-  // The project dir is two levels up: .workspaces/task-xxx → .workspaces → projectDir
-  const projectDir = path.dirname(path.dirname(workspacePath));
+  const projectDir = workspacePath;
 
   try {
     // Check for conflicts: files modified in both workspace and main project since workspace creation
@@ -589,7 +557,7 @@ export function cleanupWorkspace(task: Task): boolean {
   if (!task.workspace_path) return false;
 
   const workspacePath = task.workspace_path;
-  const projectDir = path.dirname(path.dirname(workspacePath));
+  const projectDir = workspacePath;
 
   try {
     if (task.workspace_strategy === 'worktree') {

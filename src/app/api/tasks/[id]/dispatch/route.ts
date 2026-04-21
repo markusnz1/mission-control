@@ -342,7 +342,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     let workspaceIsolated = false;
     let workspaceBranchName: string | undefined;
     let workspacePort: number | undefined;
-    const isolationStrategy = !product ? determineIsolationStrategy(task as Task) : null;
+    // Always determine isolation strategy, workspace is created by Mission Control
+    // regardless of whether task has a product or not
+    const isolationStrategy = determineIsolationStrategy(task as Task);
     const isBuilderDispatch = task.status === 'assigned' || task.status === 'in_progress' || task.status === 'inbox';
     if (isolationStrategy && isBuilderDispatch) {
       try {
