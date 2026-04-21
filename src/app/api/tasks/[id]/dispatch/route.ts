@@ -11,9 +11,65 @@ import { pickDynamicAgent } from '@/lib/task-governance';
 import { buildCheckpointContext } from '@/lib/checkpoint';
 import { formatMailForDispatch } from '@/lib/mailbox';
 import { getPendingNotesForDispatch } from '@/lib/task-notes';
-import { createTaskWorkspace, determineIsolationStrategy } from '@/lib/workspace-isolation';
+import { createTaskWorkspace, determineIsolationStrategy, getWorkspaceStatus } from '@/lib/workspace-isolation';
 import { ensureGatewayAgentMetadata } from '@/lib/gateway-agent-metadata';
 import type { Task, Agent, Product, OpenClawSession, WorkflowStage, TaskImage } from '@/lib/types';
+
+function slugifyTaskTitle(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function sanitizeExtractedPath(candidate: string): string | null {
+  const trimmed = candidate.trim().replace(/^['"`]+|['"`.,;:!?]+$/g, '');
+  if (!trimmed) return null;
+  if (/^(~\/|\/|\.\/|\.\.\/)/.test(trimmed)) {
+    return trimmed;
+  }
+  return null;
+}
+
+function extractExplicitWorkspacePath(description?: string): string | null {
+  if (!description) return null;
+
+  const patterns = [
+    /(?:^|\s)(~\/[\w./-]+)/g,
+    /(?:^|\s)(\/(?:Users|home|tmp|var|opt|srv|mnt|Volumes|Documents|projects)[\w./-]*)/g,
+    /(?:^|\s)(\.\.?\/[\w./-]+)/g,
+  ];
+
+  for (const pattern of patterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(description)) !== null) {
+      const candidate = sanitizeExtractedPath(match[1]);
+      if (candidate) {
+        return candidate;
+      }
+    }
+  }
+
+  return null;
+}
+
+function deriveUserIntendedPath(task: Task, projectsPath: string): string {
+  const explicitTaskPath = sanitizeExtractedPath(task.workspace_path || '');
+  if (explicitTaskPath) {
+    return explicitTaskPath;
+  }
+
+  const extractedDescriptionPath = extractExplicitWorkspacePath(task.description);
+  if (extractedDescriptionPath) {
+    if (task.repo_url) {
+      const repoNameMatch = task.repo_url.match(/\/([^/]+?)(?:\.git)?\/?$/);
+      const repoName = repoNameMatch?.[1];
+      if (repoName && /\/(projects|Documents)\/?$/i.test(extractedDescriptionPath)) {
+        return `${extractedDescriptionPath.replace(/\/$/, '')}/${repoName}`;
+      }
+    }
+    return extractedDescriptionPath;
+  }
+
+  return `${projectsPath}/${slugifyTaskTitle(task.title)}`;
+}
 
 export const dynamic = 'force-dynamic';
 interface RouteParams {
@@ -201,10 +257,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       urgent: '🔴'
     }[task.priority] || '⚪';
 
-    // Get project path for deliverables — with workspace isolation if needed
+    // Get project path for deliverables, prefer explicit user intent before any derived fallback
     const projectsPath = getProjectsPath();
-    const projectDir = task.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    let taskProjectDir = `${projectsPath}/${projectDir}`;
+    let taskProjectDir = deriveUserIntendedPath(task, projectsPath);
+    const userIntendedProjectDir = taskProjectDir;
     const missionControlUrl = getMissionControlUrl();
 
     // Create isolated workspace if parallel builds are possible
@@ -216,14 +272,29 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const isBuilderDispatch = task.status === 'assigned' || task.status === 'in_progress' || task.status === 'inbox';
     if (isolationStrategy && isBuilderDispatch) {
       try {
-        const workspace = await createTaskWorkspace(task as Task);
-        taskProjectDir = workspace.path;
-        workspaceIsolated = true;
-        workspaceBranchName = workspace.branch;
-        workspacePort = workspace.port;
-        console.log(`[Dispatch] Created ${workspace.strategy} workspace for task ${task.id}: ${workspace.path}`);
+        const existingWorkspace = getWorkspaceStatus(task as Task);
+        const shouldReuseExistingWorkspace = existingWorkspace.exists && existingWorkspace.path === userIntendedProjectDir;
+
+        if (shouldReuseExistingWorkspace) {
+          taskProjectDir = existingWorkspace.path!;
+          workspaceIsolated = true;
+          workspaceBranchName = existingWorkspace.branch;
+          workspacePort = existingWorkspace.port;
+          console.log(`[Dispatch] Reusing existing ${existingWorkspace.strategy || 'isolated'} workspace for task ${task.id}: ${existingWorkspace.path}`);
+        } else {
+          const workspace = await createTaskWorkspace({
+            ...(task as Task),
+            workspace_path: userIntendedProjectDir,
+          });
+          taskProjectDir = workspace.path;
+          workspaceIsolated = true;
+          workspaceBranchName = workspace.branch;
+          workspacePort = workspace.port;
+          console.log(`[Dispatch] Created ${workspace.strategy} workspace for task ${task.id}: ${workspace.path}`);
+        }
       } catch (err) {
-        console.warn(`[Dispatch] Workspace isolation failed, using default path:`, (err as Error).message);
+        console.warn(`[Dispatch] Workspace isolation failed, using preferred path:`, (err as Error).message);
+        taskProjectDir = userIntendedProjectDir;
       }
     }
 
@@ -434,8 +505,8 @@ ${task.due_date ? `**Due:** ${task.due_date}\n` : ''}
 **Task ID:** ${task.id}
 ${planningSpecSection}${agentInstructionsSection}${skillsSection}${knowledgeSection}${imagesSection}${buildCheckpointContext(task.id) || ''}${formatMailForDispatch(agent.id) || ''}${repoSection}
 ${isBuilder ? (workspaceIsolated
-  ? `**\u{1F512} ISOLATED WORKSPACE:** ${taskProjectDir}\n- **Port:** ${workspacePort || 'default'} (use this for dev server, NOT the default)\n${workspaceBranchName ? `- **Branch:** ${workspaceBranchName}\n` : ''}- **IMPORTANT:** Do NOT modify files outside this workspace directory. Other agents may be working on the same project in parallel. All your work must stay within: ${taskProjectDir}\nCreate this directory if needed and save all deliverables there.\n`
-  : `**OUTPUT DIRECTORY:** ${taskProjectDir}\nCreate this directory and save all deliverables there.\n`)
+  ? `**\u{1F512} ISOLATED WORKSPACE:** ${taskProjectDir}\n- **Use this exact path:** ${taskProjectDir}\n- **Port:** ${workspacePort || 'default'} (use this for dev server, NOT the default)\n${workspaceBranchName ? `- **Branch:** ${workspaceBranchName}\n` : ''}- **IMPORTANT:** Do NOT modify files outside this workspace directory. Other agents may be working on the same project in parallel. All your work must stay within: ${taskProjectDir}\nCreate this directory if needed and save all deliverables there.\n`
+  : `**OUTPUT DIRECTORY:** ${taskProjectDir}\n- **Use this exact path:** ${taskProjectDir}\nCreate this directory and save all deliverables there.\n`)
 : `**OUTPUT DIRECTORY:** ${taskProjectDir}\n`}
 ${completionInstructions}
 
