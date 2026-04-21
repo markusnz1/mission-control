@@ -19,6 +19,10 @@ function slugifyTaskTitle(title: string): string {
   return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
+function slugifyProductName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
 function sanitizeExtractedPath(candidate: string): string | null {
   const trimmed = candidate.trim().replace(/^['"`]+|['"`.,;:!?]+$/g, '');
   if (!trimmed) return null;
@@ -50,10 +54,14 @@ function extractExplicitWorkspacePath(description?: string): string | null {
   return null;
 }
 
-function deriveUserIntendedPath(task: Task, projectsPath: string): string {
+function deriveUserIntendedPath(task: Task, projectsPath: string, product?: Product | null): string {
   const explicitTaskPath = sanitizeExtractedPath(task.workspace_path || '');
   if (explicitTaskPath) {
     return explicitTaskPath;
+  }
+
+  if (product) {
+    return `${projectsPath}/${slugifyProductName(product.name)}`;
   }
 
   const extractedDescriptionPath = extractExplicitWorkspacePath(task.description);
@@ -229,23 +237,24 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    const product = task.product_id
+      ? queryOne<Product>('SELECT * FROM products WHERE id = ?', [task.product_id])
+      : null;
+
     // Cost cap warning check
     let costCapWarning: string | undefined;
-    if (task.product_id) {
-      const product = queryOne<Product>('SELECT * FROM products WHERE id = ?', [task.product_id]);
-      if (product?.cost_cap_monthly) {
-        const monthStart = new Date();
-        monthStart.setDate(1);
-        monthStart.setHours(0, 0, 0, 0);
-        const monthlySpend = queryOne<{ total: number }>(
-          `SELECT COALESCE(SUM(cost_usd), 0) as total FROM cost_events
-           WHERE product_id = ? AND created_at >= ?`,
-          [task.product_id, monthStart.toISOString()]
-        );
-        if (monthlySpend && monthlySpend.total >= product.cost_cap_monthly) {
-          costCapWarning = `Monthly cost cap reached: $${monthlySpend.total.toFixed(2)}/$${product.cost_cap_monthly.toFixed(2)}`;
-          console.warn(`[Dispatch] ${costCapWarning} for product ${product.name}`);
-        }
+    if (product?.cost_cap_monthly) {
+      const monthStart = new Date();
+      monthStart.setDate(1);
+      monthStart.setHours(0, 0, 0, 0);
+      const monthlySpend = queryOne<{ total: number }>(
+        `SELECT COALESCE(SUM(cost_usd), 0) as total FROM cost_events
+         WHERE product_id = ? AND created_at >= ?`,
+        [task.product_id, monthStart.toISOString()]
+      );
+      if (monthlySpend && monthlySpend.total >= product.cost_cap_monthly) {
+        costCapWarning = `Monthly cost cap reached: $${monthlySpend.total.toFixed(2)}/$${product.cost_cap_monthly.toFixed(2)}`;
+        console.warn(`[Dispatch] ${costCapWarning} for product ${product.name}`);
       }
     }
 
@@ -264,7 +273,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Get project path for deliverables, prefer explicit user intent before any derived fallback
     const projectsPath = getProjectsPath();
-    let taskProjectDir = deriveUserIntendedPath(task, projectsPath);
+    let taskProjectDir = deriveUserIntendedPath(task, projectsPath, product);
     const userIntendedProjectDir = taskProjectDir;
     const missionControlUrl = getMissionControlUrl();
 
@@ -273,7 +282,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     let workspaceIsolated = false;
     let workspaceBranchName: string | undefined;
     let workspacePort: number | undefined;
-    const isolationStrategy = determineIsolationStrategy(task as Task);
+    const isolationStrategy = !product ? determineIsolationStrategy(task as Task) : null;
     const isBuilderDispatch = task.status === 'assigned' || task.status === 'in_progress' || task.status === 'inbox';
     if (isolationStrategy && isBuilderDispatch) {
       try {
