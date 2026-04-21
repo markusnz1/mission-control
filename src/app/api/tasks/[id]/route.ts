@@ -528,6 +528,9 @@ export async function DELETE(
     // Conversations and Knowledge reference tasks - nullify or delete
     run('UPDATE conversations SET task_id = NULL WHERE task_id = ?', [id]);
     run('UPDATE knowledge_entries SET task_id = NULL WHERE task_id = ?', [id]);
+    // workspace_ports and workspace_merges have FK to tasks without CASCADE
+    run('DELETE FROM workspace_ports WHERE task_id = ?', [id]);
+    run('DELETE FROM workspace_merges WHERE task_id = ?', [id]);
 
     // Now delete the task (cascades to task_activities and task_deliverables)
     run('DELETE FROM tasks WHERE id = ?', [id]);
