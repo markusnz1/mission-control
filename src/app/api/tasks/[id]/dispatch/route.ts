@@ -111,17 +111,20 @@ function deriveUserIntendedPath(task: Task, projectsPath: string, product?: Prod
     return extractedDescriptionPath;
   }
 
-  // 4. Fallback to workspace slug (not task title)
+  // 4. Fallback to workspace name (look up workspace by ID, use its name, not the UUID)
   const wsId = task.workspace_id || 'default';
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}/i.test(wsId);
-  const workspaceSlug = isUuid
-    ? slugifyTaskTitle(task.title)
-    : wsId.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+  const workspaceRow = wsId !== 'default'
+    ? queryOne<{ id: string; name: string; slug: string }>('SELECT id, name, slug FROM workspaces WHERE id = ?', [wsId])
+    : null;
+  const workspaceSlug = workspaceRow
+    ? slugifyTaskTitle(workspaceRow.name)
+    : slugifyTaskTitle(task.title);
   const fallbackPath = `${projectsPath}/${workspaceSlug}`;
   console.log('[Dispatch] deriveUserIntendedPath falling back to workspace path', {
     taskId: task.id,
     taskTitle: task.title,
     workspaceId: wsId,
+    workspaceName: workspaceRow?.name || null,
     fallbackPath,
   });
   return fallbackPath;
