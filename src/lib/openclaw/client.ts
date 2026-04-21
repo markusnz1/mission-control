@@ -476,8 +476,11 @@ export class OpenClawClient extends EventEmitter {
     await this.call('sessions.send', { session_id: sessionId, content });
   }
 
-  async createSession(channel: string, peer?: string): Promise<OpenClawSessionInfo> {
-    return this.call<OpenClawSessionInfo>('sessions.create', { channel, peer });
+  async createSession(channel: string, peer?: string, capabilities?: string[]): Promise<OpenClawSessionInfo> {
+    const params: Record<string, unknown> = { channel };
+    if (peer) params.peer = peer;
+    if (capabilities && capabilities.length > 0) params.capabilities = capabilities;
+    return this.call<OpenClawSessionInfo>('sessions.create', params);
   }
 
   // Agent methods

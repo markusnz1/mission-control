@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { channel, peer } = body;
+    const { channel, peer, capabilities } = body;
 
     if (!channel) {
       return NextResponse.json(
@@ -83,7 +83,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const session = await client.createSession(channel, peer);
+    const session = await client.createSession(channel, peer, Array.isArray(capabilities) ? capabilities : undefined);
     return NextResponse.json({ session }, { status: 201 });
   } catch (error) {
     console.error('Failed to create OpenClaw session:', error);

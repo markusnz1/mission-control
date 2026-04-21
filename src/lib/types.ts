@@ -367,6 +367,7 @@ export interface OpenClawSessionInfo {
   peer?: string;
   model?: string;
   status: string;
+  capabilities?: string[] | Record<string, unknown>;
 }
 
 // OpenClaw history message format (from Gateway)

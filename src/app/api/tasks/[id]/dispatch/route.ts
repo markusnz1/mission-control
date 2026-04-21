@@ -142,6 +142,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         [sessionId, agent.id, openclawSessionId, id, 'mission-control', 'active', now, now]
       );
 
+      try {
+        await client.createSession('mission-control', openclawSessionId, ['exec']);
+      } catch (err) {
+        console.warn('[Dispatch] Failed to pre-create OpenClaw session with exec capability:', err);
+      }
+
       session = queryOne<OpenClawSession>(
         'SELECT * FROM openclaw_sessions WHERE id = ?',
         [sessionId]

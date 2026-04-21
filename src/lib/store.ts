@@ -159,9 +159,12 @@ export const useMissionControl = create<MissionControlState>((set) => ({
       } else {
         debug.store('Task not found in store, adding', { id: updatedTask.id });
       }
-      const tasks = state.tasks.map((task) =>
-        task.id === updatedTask.id ? updatedTask : task
-      );
+
+      const taskExists = state.tasks.some((task) => task.id === updatedTask.id);
+      const tasks = taskExists
+        ? state.tasks.map((task) => (task.id === updatedTask.id ? updatedTask : task))
+        : [updatedTask, ...state.tasks];
+
       return {
         tasks,
         agents: reconcileAgentStatuses(state.agents, tasks),
